@@ -6,6 +6,7 @@ from pydantic import BaseModel, EmailStr
 tasks_table = []
 users_table = []
 
+
 class TaskCreate(BaseModel):
     title: str
     description: Optional[str] = None
