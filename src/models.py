@@ -15,7 +15,13 @@ class TaskCreate(BaseModel):
 
 class Task(TaskCreate):
     id: str
-    owner_id: str = 'user1'
+    owner_id: str
+
+
+class TaskUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    completed: Optional[str] = None
 
 
 class UserBase(BaseModel):
