@@ -1,49 +1,64 @@
 from typing import Annotated
-from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from starlette import status
 
-from src.models import UserCreate, users_table, UserOut, Token
-from src.core.security import get_password_hash, authenticate_user, create_access_token
+from src.models import UserCreate, UserOut, Token
+from src.core.security import get_password_hash, verify_password, create_access_token
+from src.db.models import User
+from src.db.session import get_db
 
 router = APIRouter(prefix='/auth')
 
 
 @router.post("/register", response_model=UserOut)
-def register_user(user_in: UserCreate):
-    for user in users_table:
-        if user['username'] == user_in.username or user['email'] == user_in.email:
-            raise HTTPException(status_code=400, detail="Username or email already exists")
+async def register_user(
+        user_in: UserCreate,
+        db: Annotated[AsyncSession, Depends(get_db)]
+):
+    stmt = select(User).where(
+        (User.username == user_in.username) or (User.email == user_in.email)
+    )
+    existing = await db.execute(stmt)
+
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status_code=400,
+            detail="Username or email already exists"
+        )
 
     hashed_password = get_password_hash(user_in.password)
 
-    new_user = {
-        'id': str(uuid4()),
-        'username': user_in.username,
-        'email': user_in.email,
-        'password': hashed_password
-    }
+    db_user = User()
+    db_user.username = user_in.username
+    db_user.email = user_in.email
+    db_user.password_hash = hashed_password
 
-    users_table.append(new_user)
-
-    return UserOut(
-        id=new_user['id'],
-        username=new_user['username'],
-        email=new_user['email'],
-    )
+    db.add(db_user)
+    await db.commit()
+    await db.refresh(db_user)
+    return UserOut.from_orm(db_user)
 
 
 @router.post("/token", response_model=Token)
-async def login_user(form_data: Annotated[OAuth2PasswordRequestForm, Depends()]):
-    user = authenticate_user(form_data.username, form_data.password)
-    if not user:
+async def login_for_access_token(
+        form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+        db: Annotated[AsyncSession, Depends(get_db)]
+):
+    stmt = select(User).where(User.username == form_data.username)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+
+    if not user or not verify_password(form_data.password, user.password_hash):
         raise HTTPException(
-            status_code=401,
-            detail="Incorrect username, email or password",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"}
         )
 
-    access_token = create_access_token(data={"sub": user['id']})
+    access_token = create_access_token(data={"sub": str(user.id)})
 
     return Token(access_token=access_token, token_type="bearer")
