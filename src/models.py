@@ -1,10 +1,7 @@
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr
-
-tasks_table = []
-users_table = []
+from pydantic import BaseModel, EmailStr, ConfigDict
 
 
 class TaskCreate(BaseModel):
@@ -13,9 +10,11 @@ class TaskCreate(BaseModel):
     completed: bool = False
 
 
-class Task(TaskCreate):
-    id: str
-    owner_id: str
+class TaskRead(TaskCreate):
+    id: UUID
+    owner_id: UUID
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TaskUpdate(BaseModel):
@@ -35,6 +34,8 @@ class UserCreate(UserBase):
 
 class UserOut(UserBase):
     id: UUID
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class Token(BaseModel):
